@@ -1,0 +1,57 @@
+<script src="https://cdn.tailwindcss.com"></script>
+<body class="bg-slate-900 text-white min-h-screen p-8">
+  <div class="max-w-5xl mx-auto">
+    <header class="mb-10 flex justify-between items-end">
+      <div>
+        <h1 class="text-4xl font-bold text-cyan-400">API Usage Analyzer</h1>
+        <p class="text-slate-400">Scan codebases for zombie APIs and financial leaks.</p>
+      </div>
+      <div id="wasteCounter" class="text-right hidden">
+        <p class="text-sm text-slate-400 uppercase tracking-widest">Monthly Potential Savings</p>
+        <p class="text-5xl font-black text-green-400" id="totalWaste">$0</p>
+      </div>
+    </header>
+
+    <div class="bg-slate-800 p-6 rounded-2xl border border-slate-700 mb-8">
+      <div class="flex gap-4">
+        <input type="text" id="pathInput" placeholder="Enter local folder path..." 
+               class="flex-1 bg-slate-900 border border-slate-600 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-cyan-500">
+        <button id="scanBtn" class="bg-cyan-500 hover:bg-cyan-600 px-8 py-3 rounded-lg font-bold transition-all">Start Deep Scan</button>
+      </div>
+    </div>
+
+    <div id="resultsGrid" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      </div>
+  </div>
+
+  <script>
+    document.getElementById('scanBtn').addEventListener('click', async () => {
+      const path = document.getElementById('pathInput').value;
+      const res = await fetch('/scan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path })
+      });
+      const data = await res.json();
+      renderResults(data.output);
+    });
+
+    function renderResults(data) {
+      const grid = document.getElementById('resultsGrid');
+      document.getElementById('wasteCounter').classList.remove('hidden');
+      document.getElementById('totalWaste').textContent = `$${data.totalWaste}`;
+      
+      grid.innerHTML = data.report.map(item => `
+        <div class="p-5 rounded-xl border ${item.status === 'UNUSED' ? 'border-orange-500/50 bg-orange-500/5' : 'border-slate-700 bg-slate-800/50'}">
+          <div class="flex justify-between mb-2">
+            <span class="text-xs font-bold uppercase ${item.status === 'UNUSED' ? 'text-orange-400' : 'text-cyan-400'}">${item.status}</span>
+            <span class="text-xs text-slate-500">${item.file}:${item.line}</span>
+          </div>
+          <h3 class="font-mono text-sm text-slate-200 mb-1">${item.varName}</h3>
+          <p class="text-xs text-slate-400 truncate mb-4">${item.url}</p>
+          ${item.status === 'UNUSED' ? `<p class="text-sm text-orange-300 font-bold">Estimated Waste: $${item.waste}/mo</p>` : ''}
+        </div>
+      `).join('');
+    }
+  </script>
+</body>
