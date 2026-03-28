@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+
+# Environment variables (secrets)
+.env
+
+# Temporary scan folders
+temp/
+
+# Logs
+*.log
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Build outputs (if any later)
+dist/
+build/

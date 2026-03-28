@@ -1,94 +1,75 @@
 const fs = require("fs");
 const path = require("path");
-const parser = require("@babel/parser");
-const traverse = require("@babel/traverse").default;
 const glob = require("glob");
 
-// 💰 Cost Mapping Dictionary
 const COST_DB = {
-  "stripe.com": { name: "Stripe", monthlyBase: 15 },
-  "openai.com": { name: "OpenAI", monthlyBase: 25 },
-  "twilio.com": { name: "Twilio", monthlyBase: 10 },
-  "googleapis.com": { name: "Google Cloud", monthlyBase: 20 },
-  "aws.amazon.com": { name: "AWS", monthlyBase: 45 }
+  "stripe": { name: "Stripe", monthlyBase: 15 },
+  "openai": { name: "OpenAI", monthlyBase: 25 },
+  "twilio": { name: "Twilio", monthlyBase: 10 },
+  "aws-sdk": { name: "AWS SDK", monthlyBase: 45 },
+  "@aws-sdk": { name: "AWS SDK", monthlyBase: 45 },
+  "googleapis": { name: "Google APIs", monthlyBase: 20 },
+  "razorpay": { name: "Razorpay", monthlyBase: 12 },
+  "phonepe": { name: "PhonePe", monthlyBase: 8 },
+  "paytm": { name: "Paytm", monthlyBase: 10 },
+  "supabase": { name: "Supabase", monthlyBase: 25 },
+  "firebase": { name: "Firebase", monthlyBase: 30 },
+  "sendgrid": { name: "SendGrid", monthlyBase: 15 },
+  "paypal": { name: "PayPal", monthlyBase: 10 },
+  "shopify": { name: "Shopify", monthlyBase: 20 },
+  "vercel": { name: "Vercel", monthlyBase: 20 },
+  "next": { name: "Next.js (Vercel)", monthlyBase: 20 },
 };
 
 async function runScanner(inputPath) {
-  const files = glob.sync(`${inputPath}/**/*.{js,jsx,ts,tsx}`, {
-    ignore: ["**/node_modules/**", "**/dist/**", "**/build/**", "**/.git/**"]
-  });
+  const reportMap = new Map();
+  let totalWaste = 0;
 
-  const discoveredApis = []; // Stores { varName, url, file, line }
-  const usedIdentifiers = new Set(); // Stores variable names found in fetch/axios calls
-
-  // STAGE 1: Parse all files to map Definitions and Usages
-  files.forEach(file => {
-    const code = fs.readFileSync(file, "utf-8");
+  const pkgPath = path.join(inputPath, "package.json");
+  if (fs.existsSync(pkgPath)) {
     try {
-      const ast = parser.parse(code, {
-        sourceType: "module",
-        plugins: ["jsx", "typescript"]
-      });
+      const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf-8"));
+      const allDeps = [
+        ...Object.keys(pkg.dependencies || {}),
+        ...Object.keys(pkg.devDependencies || {})
+      ];
 
-      traverse(ast, {
-        // Find variable declarations that look like URLs
-        VariableDeclarator(p) {
-          const init = p.node.init;
-          if (init && (init.type === "StringLiteral" || init.type === "TemplateLiteral")) {
-            const val = init.type === "StringLiteral" ? init.value : "";
-            if (val.startsWith("http")) {
-              discoveredApis.push({
-                varName: p.node.id.name,
-                url: val,
-                file: path.relative(inputPath, file),
-                line: p.node.loc.start.line
-              });
-            }
-          }
-        },
-        // Find where these variables are actually "consumed"
-        CallExpression(p) {
-          const callee = p.node.callee;
-          const isRequest = (callee.name === "fetch") || 
-                            (callee.object && callee.object.name === "axios");
-          
-          if (isRequest && p.node.arguments.length > 0) {
-            const arg = p.node.arguments[0];
-            if (arg.type === "Identifier") usedIdentifiers.add(arg.name);
-            if (arg.type === "StringLiteral") usedIdentifiers.add(arg.value);
-            // Handle template literals like `axios.get(`${BASE_URL}/users`)`
-            if (arg.type === "TemplateLiteral") {
-              arg.expressions.forEach(exp => {
-                if (exp.type === "Identifier") usedIdentifiers.add(exp.name);
-              });
-            }
+      allDeps.forEach(name => {
+        const lower = name.toLowerCase();
+        const matchKey = Object.keys(COST_DB).find(key => lower.includes(key));
+        
+        if (matchKey) {
+          const info = COST_DB[matchKey];
+          if (!reportMap.has(info.name)) {
+            reportMap.set(info.name, {
+              provider: info.name,
+              file: "package.json",
+              status: "💰 Detected Paid API",
+              waste: info.monthlyBase,
+              note: "Review usage in production"
+            });
+            totalWaste += info.monthlyBase;
           }
         }
       });
-    } catch (e) { /* Skip unparseable files */ }
-  });
+    } catch (e) { console.error("package.json parse error"); }
+  }
 
-  // STAGE 2: Cross-Reference & Cost Calculation
-  let totalWaste = 0;
-  const report = discoveredApis.map(api => {
-    const isUsed = usedIdentifiers.has(api.varName) || usedIdentifiers.has(api.url);
-    let waste = 0;
+  const report = Array.from(reportMap.values());
 
-    if (!isUsed) {
-      const provider = Object.keys(COST_DB).find(key => api.url.includes(key));
-      waste = provider ? COST_DB[provider].monthlyBase : 5; // Default $5 for unknown
-      totalWaste += waste;
-    }
-
-    return {
-      ...api,
-      status: isUsed ? "USED" : "UNUSED",
-      waste: isUsed ? 0 : waste,
-      securityRisk: !api.url.startsWith("https") ? "High (Insecure HTTP)" : "Low"
-    };
-  });
-
-  return { report, totalWaste, summary: { total: report.length, unused: report.filter(r => r.status === "UNUSED").length } };
+  return {
+    success: true,
+    report,
+    totalWaste,
+    summary: {
+      total: report.length,
+      unused: report.length,
+      potentialSavings: totalWaste
+    },
+    message: report.length > 0 
+      ? `Found ${report.length} potential paid APIs. Review to save money.` 
+      : "No obvious paid APIs detected."
+  };
 }
 
 module.exports = { runScanner };

@@ -4,7 +4,8 @@
   "description": "Detect used and unused APIs in code",
   "main": "server/server.js",
   "scripts": {
-    "start": "node server/server.js"
+    "start": "node server/server.js",
+    "dev": "nodemon server/server.js"
   },
   "dependencies": {
     "@babel/parser": "^7.29.2",
